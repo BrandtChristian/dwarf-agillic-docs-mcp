@@ -1,0 +1,14 @@
+{
+  "name": "dwarf-agillic-docs-mcp",
+  "version": "1.0.0",
+  "description": "Installs the Agillic Docs MCP server into Claude Code, Cursor, VS Code, and Claude Desktop",
+  "bin": {
+    "dwarf-agillic-docs-mcp": "./install.js"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "keywords": ["mcp", "agillic", "claude", "cursor", "ai"],
+  "author": "Dwarf",
+  "license": "MIT"
+}
