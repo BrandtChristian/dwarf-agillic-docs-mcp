@@ -44,6 +44,38 @@ function commandExists(cmd) {
   catch { return false; }
 }
 
+function semverGte(version, min) {
+  const parse = v => v.split('.').map(n => parseInt(n) || 0);
+  const [va, vb] = [parse(version), parse(min)];
+  for (let i = 0; i < Math.max(va.length, vb.length); i++) {
+    const a = va[i] || 0, b = vb[i] || 0;
+    if (a > b) return true;
+    if (a < b) return false;
+  }
+  return true;
+}
+
+function getClaudeDesktopVersion() {
+  try {
+    if (platform === 'darwin') {
+      const plist = '/Applications/Claude.app/Contents/Info.plist';
+      if (fs.existsSync(plist)) {
+        return execSync(`/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "${plist}"`,
+          { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || null;
+      }
+    }
+  } catch {}
+  return null;
+}
+
+function getVSCodeVersion() {
+  try {
+    return execSync('code --version', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString().trim().split('\n')[0] || null;
+  } catch {}
+  return null;
+}
+
 // ─── Client detection ─────────────────────────────────────────────────────────
 //
 // Returns a list of potential install targets. Each has:
@@ -71,6 +103,10 @@ function detectClients() {
   // Claude Desktop
   const desktopPath = claudeDesktopConfigPath();
   if (fs.existsSync(desktopPath)) {
+    const desktopVersion = getClaudeDesktopVersion();
+    const desktopWarning = desktopVersion && !semverGte(desktopVersion, '0.9.0')
+      ? `HTTP MCPs require v0.9+ (you have ${desktopVersion})`
+      : null;
     found.push({
       id: 'claude-desktop',
       name: 'Claude Desktop',
@@ -78,7 +114,8 @@ function detectClients() {
       globalConfigPath: desktopPath,
       localConfigPath: null,
       keyPath: ['mcpServers'],
-      warning: 'HTTP MCPs require Claude Desktop 0.9+',
+      version: desktopVersion,
+      warning: desktopWarning,
     });
   }
 
@@ -99,6 +136,10 @@ function detectClients() {
   const vscodePath = vscodeUserSettingsPath();
   const vscodeFound = fs.existsSync(vscodePath) || fs.existsSync(path.join(home, '.vscode')) || commandExists('code');
   if (vscodeFound) {
+    const vscodeVersion = getVSCodeVersion();
+    const vscodeWarning = vscodeVersion && !semverGte(vscodeVersion, '1.99.0')
+      ? `Requires Copilot agent mode (v1.99+, you have ${vscodeVersion})`
+      : null;
     found.push({
       id: 'vscode',
       name: 'VS Code',
@@ -108,7 +149,8 @@ function detectClients() {
       localConfigPath: path.join(process.cwd(), '.vscode', 'mcp.json'),
       localKeyPath: ['servers'],
       keyPath: ['mcp', 'servers'], // default; overridden below based on scope
-      warning: 'Requires Copilot agent mode (v1.99+)',
+      version: vscodeVersion,
+      warning: vscodeWarning,
     });
   }
 
@@ -229,7 +271,8 @@ async function main() {
     const warn = client.warning ? `  ${c.yellow('⚠  ' + client.warning)}` : '';
     const alreadyNote = already ? c.dim('  already installed') : '';
     const scopeLabel = client.scopeable ? c.dim(` [${scope}]`) : '';
-    console.log(`  ${icon}  ${client.name.padEnd(16)} ${c.dim(shortPath(client.configPath))}${scopeLabel}${warn}${alreadyNote}`);
+    const versionLabel = client.version ? c.dim(` v${client.version}`) : '';
+    console.log(`  ${icon}  ${client.name.padEnd(16)}${versionLabel.padEnd(versionLabel ? 10 : 0)} ${c.dim(shortPath(client.configPath))}${scopeLabel}${warn}${alreadyNote}`);
   }
 
   const installable = clients.filter(cl => !isAlreadyInstalled(cl));
@@ -243,7 +286,7 @@ async function main() {
   // ── Step 4: select ────────────────────────────────────────────────────────
   console.log('\nWhere would you like to install?\n');
   installable.forEach((client, i) => {
-    const warn = client.warning ? c.yellow(' ⚠') : '';
+    const warn = client.warning ? `  ${c.yellow('⚠  ' + client.warning)}` : '';
     console.log(`  [${i + 1}] ${client.name}${warn}`);
   });
   console.log(`  [a] All of the above`);
